@@ -14,14 +14,27 @@ export interface Config { log?: boolean; askThreshold?: number; failClosed?: boo
 export const Config: z<Config> = z.object({ log: z.boolean().default(true), askThreshold: z.number().default(60), failClosed: z.boolean().default(true) })
 
 type Message = { source?: unknown; role?: string; content?: unknown }
-function textOf(content: unknown): string {
+function objectOf(value: unknown): Record<string, unknown> | undefined { return value !== null && typeof value === 'object' ? value as Record<string, unknown> : undefined }
+function textOf(content: unknown, seen = new WeakSet<object>()): string {
   if (typeof content === 'string') return content.normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g, '')
-  if (Array.isArray(content)) return content.map(textOf).filter(Boolean).join('\n')
+  if (Array.isArray(content)) {
+    if (seen.has(content)) return ''
+    seen.add(content)
+    return content.map(item => textOf(item, seen)).filter(Boolean).join('\n')
+  }
   if (!content || typeof content !== 'object') return ''
-  const value = content as { text?: unknown; value?: unknown; content?: unknown; data?: unknown; parts?: unknown }
-  return textOf(value.text ?? value.value ?? value.content ?? value.data ?? value.parts)
+  if (seen.has(content)) return ''
+  seen.add(content)
+  const value = objectOf(content)
+  return textOf(value?.text ?? value?.value ?? value?.content ?? value?.data ?? value?.parts, seen)
 }
-function agentKey(agent: unknown): string { const value = agent as { id?: unknown; session?: { id?: unknown } }; return String(value.id ?? value.session?.id ?? 'unknown') }
+function agentKey(agent: unknown): string {
+  try {
+    const value = objectOf(agent)
+    const session = objectOf(value?.session)
+    return String(value?.id ?? session?.id ?? 'unknown')
+  } catch { return 'unknown' }
+}
 function uniqueSources(sources: TurnRiskState['sources']): TurnRiskState['sources'] {
   return [...new Map(sources.map(source => [`${source.trust}:${source.label}`, source])).values()]
 }
@@ -58,30 +71,47 @@ export function apply(ctx: Context, config: Config): void {
   const askThreshold = config.askThreshold ?? 60
   const failClosed = config.failClosed !== false
   ctx.on('agent/pre-step', (event: { agent: object; messages: readonly Message[]; turn?: number }, next): Promise<PreStepDecision> => {
-    const incoming = stateFromMessages(event.agent, event.messages, event.turn)
-    const previous = states.get(event.agent)
-    const sameTurn = previous !== undefined && event.turn !== undefined && previous.turn === event.turn
-    states.set(event.agent, sameTurn ? mergeRiskState(previous, incoming) : incoming)
+    try {
+      const incoming = stateFromMessages(event.agent, event.messages, event.turn)
+      const previous = states.get(event.agent)
+      const sameTurn = previous !== undefined && event.turn !== undefined && previous.turn === event.turn
+      states.set(event.agent, sameTurn ? mergeRiskState(previous, incoming) : incoming)
+    } catch {
+      states.delete(event.agent)
+    }
     return next()
   })
   ctx.on('tools/post-execute', async (exec: ToolExecution, result: unknown, next): Promise<PostToolDecision> => {
-    const agent = exec.agent as object | undefined
+    const agent = objectOf(exec.agent)
     const state = agent ? states.get(agent) : undefined
     if (state) {
-      const signals = detectInjection(textOf(result))
-      if (signals.length) {
-        state.injectionSignals = uniqueSignals([...state.injectionSignals, ...signals])
-        state.sources = uniqueSources([...state.sources, { label: `${exec.name} output`, trust: 'UNTRUSTED' }])
-        state.hasUntrustedContext = true
-        state.contextRiskScore = 20
+      try {
+        const signals = detectInjection(textOf(result))
+        if (signals.length) {
+          state.injectionSignals = uniqueSignals([...state.injectionSignals, ...signals])
+          state.sources = uniqueSources([...state.sources, { label: `${exec.name} output`, trust: 'UNTRUSTED' }])
+          state.hasUntrustedContext = true
+          state.contextRiskScore = 20
+        }
+      } catch {
+        if (agent) states.delete(agent)
       }
     }
     return next()
   })
   ctx.on('tools/pre-execute', async (exec: ToolExecution, next): Promise<PreToolDecision> => {
-    const agent = exec.agent as object | undefined
+    const agent = objectOf(exec.agent)
     const state = agent ? states.get(agent) : undefined
-    const sinks = classifySink(exec.name, exec.arguments)
+    let sinks
+    try {
+      sinks = classifySink(exec.name, exec.arguments)
+    } catch {
+      if (!failClosed) return next()
+      const unknownState: TurnRiskState = { agentId: agentKey(agent), hasUntrustedContext: false, sources: [{ label: 'sink classification failed', trust: 'UNKNOWN' }], injectionSignals: [], contextRiskScore: 0 }
+      const audit = formatAuditLog(String(exec.name), exec.arguments, unknownState, [{ type: 'none', evidence: 'classification failed' }], { score: 0, level: 'LOW', decision: 'ASK', reasons: ['guard: sink classification failed; fail-closed review required'] })
+      if (log) console.warn(audit)
+      return { kind: 'ask', reason: audit }
+    }
     if (!sinks.length) return next()
     if (!state) {
       if (!failClosed) return next()

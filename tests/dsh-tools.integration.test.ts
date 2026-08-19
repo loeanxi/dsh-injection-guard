@@ -79,4 +79,14 @@ describe('malicious README to sensitive tool call', () => {
     expect(result).toMatchObject({ kind: 'ask' })
     expect(String((result as { reason?: string }).reason)).toContain('turn state unavailable')
   })
+
+  it('does not propagate a malformed pre-step payload to DSH', async () => {
+    const ctx = new Context()
+    context = ctx
+    apply(ctx, { log: false })
+    const agent = {}
+    await expect(ctx.waterfall('agent/pre-step', { agent, messages: null } as never, () => Promise.resolve({ kind: 'enter' }))).resolves.toMatchObject({ kind: 'enter' })
+    const result = await ctx.waterfall('tools/pre-execute', { agent, name: 'filesystem.read', arguments: { path: '~/.ssh/id_rsa' } } as never, () => Promise.resolve({ kind: 'allow' }))
+    expect(result).toMatchObject({ kind: 'ask' })
+  })
 })

@@ -18,10 +18,16 @@ function textOf(content: unknown): string {
   if (typeof content === 'string') return content.normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g, '')
   if (Array.isArray(content)) return content.map(textOf).filter(Boolean).join('\n')
   if (!content || typeof content !== 'object') return ''
-  const value = content as { text?: unknown; value?: unknown; content?: unknown }
-  return textOf(value.text ?? value.value ?? value.content)
+  const value = content as { text?: unknown; value?: unknown; content?: unknown; data?: unknown; parts?: unknown }
+  return textOf(value.text ?? value.value ?? value.content ?? value.data ?? value.parts)
 }
 function agentKey(agent: unknown): string { const value = agent as { id?: unknown; session?: { id?: unknown } }; return String(value.id ?? value.session?.id ?? 'unknown') }
+function uniqueSources(sources: TurnRiskState['sources']): TurnRiskState['sources'] {
+  return [...new Map(sources.map(source => [`${source.trust}:${source.label}`, source])).values()]
+}
+function uniqueSignals(signals: TurnRiskState['injectionSignals']): TurnRiskState['injectionSignals'] {
+  return [...new Map(signals.map(signal => [`${signal.type}:${signal.evidence}`, signal])).values()]
+}
 function stateFromMessages(agent: unknown, messages: readonly Message[], turn?: number): TurnRiskState {
   const injectionSignals = messages.flatMap(message => detectInjection(textOf(message.content)))
   const sources = messages.map(message => classifySource(message.source ?? (message.role === 'tool' ? { kind: 'tool', label: 'tool output' } : undefined)))
@@ -29,14 +35,14 @@ function stateFromMessages(agent: unknown, messages: readonly Message[], turn?: 
   const inferredUntrustedSource = !hasExplicitUntrustedSource && injectionSignals.length > 0
     ? [{ label: 'inferred from injection signal', trust: 'UNTRUSTED' as const }]
     : []
-  const allSources = [...sources, ...inferredUntrustedSource]
+  const allSources = uniqueSources([...sources, ...inferredUntrustedSource])
   const hasUntrustedContext = hasExplicitUntrustedSource || inferredUntrustedSource.length > 0
   return { agentId: agentKey(agent), turn, hasUntrustedContext, sources: allSources, injectionSignals, contextRiskScore: hasUntrustedContext ? 20 : 0 }
 }
 
 function mergeRiskState(current: TurnRiskState, incoming: TurnRiskState): TurnRiskState {
-  const signals = [...current.injectionSignals, ...incoming.injectionSignals]
-  const sources = [...current.sources, ...incoming.sources]
+  const signals = uniqueSignals([...current.injectionSignals, ...incoming.injectionSignals])
+  const sources = uniqueSources([...current.sources, ...incoming.sources])
   return {
     ...incoming,
     injectionSignals: signals,
@@ -64,8 +70,8 @@ export function apply(ctx: Context, config: Config): void {
       const value = result as { content?: unknown; value?: unknown }
       const signals = detectInjection(textOf(value.content ?? value.value))
       if (signals.length) {
-        state.injectionSignals.push(...signals)
-        state.sources.push({ label: `${exec.name} output`, trust: 'UNTRUSTED' })
+        state.injectionSignals = uniqueSignals([...state.injectionSignals, ...signals])
+        state.sources = uniqueSources([...state.sources, { label: `${exec.name} output`, trust: 'UNTRUSTED' }])
         state.hasUntrustedContext = true
         state.contextRiskScore = 20
       }

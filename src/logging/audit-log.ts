@@ -25,8 +25,12 @@ function safeTarget(args: unknown): string {
   }
 }
 
+function safeLogValue(value: unknown): string {
+  return String(value).replace(/[\u0000-\u001F\u007F\u2028\u2029]/g, ' ').slice(0, 512)
+}
+
 export function formatAuditLog(toolName: string, args: unknown, state: TurnRiskState, sinks: SinkRisk[], assessment: RiskAssessment): string {
   const target = typeof args === 'string' ? redact(args) : safeTarget(args)
   const decision = assessment.decision === 'BLOCK' ? 'BLOCKED' : assessment.decision === 'ASK' ? 'ASKED' : 'ALLOWED'
-  return ['⚠ DSH Injection Guard', '', 'Possible indirect prompt injection detected.', '', 'Untrusted context:', ...state.sources.filter(s => s.trust === 'UNTRUSTED').map(s => `  source: ${s.label}`), '', 'Injection signals:', ...state.injectionSignals.map(s => `  - ${s.evidence}`), '', 'Sensitive action:', `  tool: ${toolName}`, `  target: ${target}`, `  sink: ${sinks.map(s => s.type).join(', ') || 'none'}`, '', 'Risk:', `  ${assessment.level} (${assessment.score}/100)`, '', 'Decision:', `  ${decision}`].join('\n')
+  return ['⚠ DSH Injection Guard', '', 'Possible indirect prompt injection detected.', '', 'Untrusted context:', ...state.sources.filter(s => s.trust === 'UNTRUSTED').map(s => `  source: ${safeLogValue(s.label)}`), '', 'Injection signals:', ...state.injectionSignals.map(s => `  - ${safeLogValue(s.evidence)}`), '', 'Sensitive action:', `  tool: ${safeLogValue(toolName)}`, `  target: ${safeLogValue(target)}`, `  sink: ${sinks.map(s => s.type).join(', ') || 'none'}`, '', 'Risk:', `  ${assessment.level} (${assessment.score}/100)`, '', 'Decision:', `  ${decision}`].join('\n')
 }

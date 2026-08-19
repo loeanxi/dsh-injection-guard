@@ -1,6 +1,7 @@
 import type { SinkRisk } from '../types.js'
+function normalize(value: string): string { return value.normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g, '') }
 export function classifySink(toolName: string, args: unknown): SinkRisk[] {
-  const text = `${toolName} ${typeof args === 'string' ? args : JSON.stringify(args)}`
+  const text = normalize(`${toolName} ${typeof args === 'string' ? args : JSON.stringify(args)}`)
   const checks: Array<[SinkRisk['type'], RegExp]> = [
     ['download-execute', /(?:curl|wget)[^\n|]*\|\s*(?:bash|sh)|(?:curl|wget)[^\n]*(?:bash|sh)/i],
     ['credential-access', /(?:~\/|\.ssh|\.aws|\.env|id_rsa|id_ed25519|credentials?|private[ _-]?key|password|secret)/i],

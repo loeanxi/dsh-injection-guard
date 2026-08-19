@@ -53,7 +53,8 @@ export function apply(ctx: Context, config: Config): void {
   ctx.on('agent/pre-step', (event: { agent: object; messages: readonly Message[]; turn?: number }, next): Promise<PreStepDecision> => {
     const incoming = stateFromMessages(event.agent, event.messages, event.turn)
     const previous = states.get(event.agent)
-    states.set(event.agent, previous && previous.turn === event.turn ? mergeRiskState(previous, incoming) : incoming)
+    const sameTurn = previous !== undefined && event.turn !== undefined && previous.turn === event.turn
+    states.set(event.agent, sameTurn ? mergeRiskState(previous, incoming) : incoming)
     return next()
   })
   ctx.on('tools/post-execute', async (exec: ToolExecution, result: unknown, next): Promise<PostToolDecision> => {

@@ -67,8 +67,7 @@ export function apply(ctx: Context, config: Config): void {
     const agent = exec.agent as object | undefined
     const state = agent ? states.get(agent) : undefined
     if (state) {
-      const value = result as { content?: unknown; value?: unknown }
-      const signals = detectInjection(textOf(value.content ?? value.value))
+      const signals = detectInjection(textOf(result))
       if (signals.length) {
         state.injectionSignals = uniqueSignals([...state.injectionSignals, ...signals])
         state.sources = uniqueSources([...state.sources, { label: `${exec.name} output`, trust: 'UNTRUSTED' }])

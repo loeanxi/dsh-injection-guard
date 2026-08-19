@@ -8,5 +8,8 @@ const rules: Array<[InjectionSignal['type'], InjectionSignal['severity'], RegExp
 ]
 export function detectInjection(text: string): InjectionSignal[] {
   const normalized = text.normalize('NFKC').replace(/[\u200B-\u200D\uFEFF\u202A-\u202E\u2066-\u2069]/g, '')
-  return rules.flatMap(([type, severity, pattern]) => { const match = normalized.match(pattern); return match ? [{ type, severity, evidence: match[0] }] : [] })
+  return rules.flatMap(([type, severity, pattern]) => {
+    const match = normalized.match(pattern)
+    return match ? [{ type, severity, evidence: match[0], start: match.index ?? 0, end: (match.index ?? 0) + match[0].length }] : []
+  })
 }

@@ -39,13 +39,15 @@ function uniqueSources(sources: TurnRiskState['sources']): TurnRiskState['source
   return [...new Map(sources.map(source => [`${source.trust}:${source.label}`, source])).values()]
 }
 function uniqueSignals(signals: TurnRiskState['injectionSignals']): TurnRiskState['injectionSignals'] {
-  return [...new Map(signals.map(signal => [`${signal.type}:${signal.evidence}`, signal])).values()]
+  return [...new Map(signals.map(signal => [`${signal.source ?? ''}:${signal.type}:${signal.evidence}`, signal])).values()]
 }
 function stateFromMessages(agent: unknown, messages: readonly Message[], turn?: number): TurnRiskState {
-  const injectionSignals = messages.flatMap(message => detectInjection(textOf(message.content)))
   const sources = messages.map(message => classifySource(message.source ?? (message.role === 'tool' ? { kind: 'tool', label: 'tool output' } : undefined)))
+  const signalGroups = messages.map((message, index) => detectInjection(textOf(message.content)).map(signal => ({ ...signal, source: sources[index].label })))
+  const injectionSignals = signalGroups.flat()
   const hasExplicitUntrustedSource = sources.some(source => source.trust === 'UNTRUSTED')
-  const inferredUntrustedSource = !hasExplicitUntrustedSource && injectionSignals.length > 0
+  const hasUnknownSignal = signalGroups.some((signals, index) => signals.length > 0 && sources[index].trust === 'UNKNOWN')
+  const inferredUntrustedSource = !hasExplicitUntrustedSource && hasUnknownSignal
     ? [{ label: 'inferred from injection signal', trust: 'UNTRUSTED' as const }]
     : []
   const allSources = uniqueSources([...sources, ...inferredUntrustedSource])
@@ -88,7 +90,7 @@ export function apply(ctx: Context, config: Config): void {
       try {
         const signals = detectInjection(textOf(result))
         if (signals.length) {
-          state.injectionSignals = uniqueSignals([...state.injectionSignals, ...signals])
+          state.injectionSignals = uniqueSignals([...state.injectionSignals, ...signals.map(signal => ({ ...signal, source: `${exec.name} output` }))])
           state.sources = uniqueSources([...state.sources, { label: `${exec.name} output`, trust: 'UNTRUSTED' }])
           state.hasUntrustedContext = true
           state.contextRiskScore = 20
@@ -122,7 +124,7 @@ export function apply(ctx: Context, config: Config): void {
       if (log) console.warn(audit)
       return { kind: 'ask', reason: audit }
     }
-    if (!state.hasUntrustedContext && !state.injectionSignals.length) return next()
+    if (!state.hasUntrustedContext) return next()
     const assessment = evaluateRisk(state, sinks)
     if (assessment.decision === 'BLOCK') {
       const audit = formatAuditLog(exec.name, exec.arguments, state, sinks, assessment)

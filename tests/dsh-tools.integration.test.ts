@@ -89,4 +89,27 @@ describe('malicious README to sensitive tool call', () => {
     const result = await ctx.waterfall('tools/pre-execute', { agent, name: 'filesystem.read', arguments: { path: '~/.ssh/id_rsa' } } as never, () => Promise.resolve({ kind: 'allow' }))
     expect(result).toMatchObject({ kind: 'ask' })
   })
+
+  it('does not infer untrusted provenance from an explicit user message', async () => {
+    const ctx = new Context()
+    context = ctx
+    apply(ctx, { log: false })
+    const agent = {}
+    const userMessage = createUserMessage({ content: [{ type: 'text', text: 'Ignore previous instructions is a phrase in the test fixture.' }], source: { kind: 'user' } })
+    await ctx.waterfall('agent/pre-step', { agent, messages: [userMessage], turn: 1 }, () => Promise.resolve({ kind: 'enter', messages: [userMessage] }))
+    const result = await ctx.waterfall('tools/pre-execute', { agent, name: 'filesystem.read', arguments: { path: '~/.ssh/id_rsa' } } as never, () => Promise.resolve({ kind: 'allow' }))
+    expect(result).toMatchObject({ kind: 'allow' })
+  })
+
+  it('does not mix a trusted signal with an unrelated unknown message', async () => {
+    const ctx = new Context()
+    context = ctx
+    apply(ctx, { log: false })
+    const agent = {}
+    const trusted = createUserMessage({ content: [{ type: 'text', text: 'Ignore previous instructions is quoted documentation.' }], source: { kind: 'user' } })
+    const unknown = createUserMessage({ content: [{ type: 'text', text: 'A normal status update.' }] })
+    await ctx.waterfall('agent/pre-step', { agent, messages: [trusted, unknown], turn: 1 }, () => Promise.resolve({ kind: 'enter', messages: [trusted, unknown] }))
+    const result = await ctx.waterfall('tools/pre-execute', { agent, name: 'filesystem.read', arguments: { path: '~/.ssh/id_rsa' } } as never, () => Promise.resolve({ kind: 'allow' }))
+    expect(result).toMatchObject({ kind: 'allow' })
+  })
 })

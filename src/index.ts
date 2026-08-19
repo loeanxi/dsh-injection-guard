@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
-import type { PreToolDecision, ToolExecution } from '@deepseek-ai/dsh-tools'
+import type { PostToolDecision, PreToolDecision, ToolExecution } from '@deepseek-ai/dsh-tools'
 import { classifySource } from './context/source-classifier.js'
 import { detectInjection } from './context/injection-detector.js'
 import { formatAuditLog } from './logging/audit-log.js'
@@ -13,25 +13,69 @@ export const name = 'injection-guard'
 export interface Config { log?: boolean; askThreshold?: number }
 export const Config: z<Config> = z.object({ log: z.boolean().default(true), askThreshold: z.number().default(60) })
 
-type Message = { source?: unknown; content?: unknown }
+type Message = { source?: unknown; role?: string; content?: unknown }
 function textOf(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (!Array.isArray(content)) return ''
-  return content.map(block => typeof block === 'string' ? block : (block as { type?: string; text?: string }).text ?? '').join('\n')
+  if (typeof content === 'string') return content.normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g, '')
+  if (Array.isArray(content)) return content.map(textOf).filter(Boolean).join('\n')
+  if (!content || typeof content !== 'object') return ''
+  const value = content as { text?: unknown; value?: unknown; content?: unknown; data?: unknown; parts?: unknown }
+  return textOf(value.text ?? value.value ?? value.content ?? value.data ?? value.parts)
 }
 function agentKey(agent: unknown): string { const value = agent as { id?: unknown; session?: { id?: unknown } }; return String(value.id ?? value.session?.id ?? 'unknown') }
-function stateFromMessages(agent: unknown, messages: readonly Message[]): TurnRiskState {
-  const sources = messages.map(message => classifySource(message.source))
+function uniqueSources(sources: TurnRiskState['sources']): TurnRiskState['sources'] {
+  return [...new Map(sources.map(source => [`${source.trust}:${source.label}`, source])).values()]
+}
+function uniqueSignals(signals: TurnRiskState['injectionSignals']): TurnRiskState['injectionSignals'] {
+  return [...new Map(signals.map(signal => [`${signal.type}:${signal.evidence}`, signal])).values()]
+}
+function stateFromMessages(agent: unknown, messages: readonly Message[], turn?: number): TurnRiskState {
   const injectionSignals = messages.flatMap(message => detectInjection(textOf(message.content)))
-  return { agentId: agentKey(agent), hasUntrustedContext: sources.some(source => source.trust === 'UNTRUSTED'), sources, injectionSignals, contextRiskScore: sources.some(source => source.trust === 'UNTRUSTED') ? 20 : 0 }
+  const sources = messages.map(message => classifySource(message.source ?? (message.role === 'tool' ? { kind: 'tool', label: 'tool output' } : undefined)))
+  const hasExplicitUntrustedSource = sources.some(source => source.trust === 'UNTRUSTED')
+  const inferredUntrustedSource = !hasExplicitUntrustedSource && injectionSignals.length > 0
+    ? [{ label: 'inferred from injection signal', trust: 'UNTRUSTED' as const }]
+    : []
+  const allSources = uniqueSources([...sources, ...inferredUntrustedSource])
+  const hasUntrustedContext = hasExplicitUntrustedSource || inferredUntrustedSource.length > 0
+  return { agentId: agentKey(agent), turn, hasUntrustedContext, sources: allSources, injectionSignals, contextRiskScore: hasUntrustedContext ? 20 : 0 }
+}
+
+function mergeRiskState(current: TurnRiskState, incoming: TurnRiskState): TurnRiskState {
+  const signals = uniqueSignals([...current.injectionSignals, ...incoming.injectionSignals])
+  const sources = uniqueSources([...current.sources, ...incoming.sources])
+  return {
+    ...incoming,
+    injectionSignals: signals,
+    sources,
+    hasUntrustedContext: current.hasUntrustedContext || incoming.hasUntrustedContext,
+    contextRiskScore: current.hasUntrustedContext || incoming.hasUntrustedContext ? 20 : 0,
+  }
 }
 
 export function apply(ctx: Context, config: Config): void {
   const states = new WeakMap<object, TurnRiskState>()
   const log = config.log !== false
   const askThreshold = config.askThreshold ?? 60
-  ctx.on('agent/pre-step', (event: { agent: object; messages: readonly Message[] }, next): Promise<PreStepDecision> => {
-    states.set(event.agent, stateFromMessages(event.agent, event.messages))
+  ctx.on('agent/pre-step', (event: { agent: object; messages: readonly Message[]; turn?: number }, next): Promise<PreStepDecision> => {
+    const incoming = stateFromMessages(event.agent, event.messages, event.turn)
+    const previous = states.get(event.agent)
+    const sameTurn = previous !== undefined && event.turn !== undefined && previous.turn === event.turn
+    states.set(event.agent, sameTurn ? mergeRiskState(previous, incoming) : incoming)
+    return next()
+  })
+  ctx.on('tools/post-execute', async (exec: ToolExecution, result: unknown, next): Promise<PostToolDecision> => {
+    const agent = exec.agent as object | undefined
+    const state = agent ? states.get(agent) : undefined
+    if (state) {
+      const value = result as { content?: unknown; value?: unknown }
+      const signals = detectInjection(textOf(value.content ?? value.value))
+      if (signals.length) {
+        state.injectionSignals = uniqueSignals([...state.injectionSignals, ...signals])
+        state.sources = uniqueSources([...state.sources, { label: `${exec.name} output`, trust: 'UNTRUSTED' }])
+        state.hasUntrustedContext = true
+        state.contextRiskScore = 20
+      }
+    }
     return next()
   })
   ctx.on('tools/pre-execute', async (exec: ToolExecution, next): Promise<PreToolDecision> => {

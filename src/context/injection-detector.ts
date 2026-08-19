@@ -7,5 +7,6 @@ const rules: Array<[InjectionSignal['type'], InjectionSignal['severity'], RegExp
   ['obfuscated-execution', 'high', /base64|\beval\b|decode|execute\s+this|run\s+this\s+command/i],
 ]
 export function detectInjection(text: string): InjectionSignal[] {
-  return rules.flatMap(([type, severity, pattern]) => { const match = text.match(pattern); return match ? [{ type, severity, evidence: match[0] }] : [] })
+  const normalized = text.normalize('NFKC').replace(/[\u200B-\u200D\uFEFF\u202A-\u202E\u2066-\u2069]/g, '')
+  return rules.flatMap(([type, severity, pattern]) => { const match = normalized.match(pattern); return match ? [{ type, severity, evidence: match[0] }] : [] })
 }

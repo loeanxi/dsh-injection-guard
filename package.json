@@ -1,0 +1,27 @@
+{
+  "name": "@dsh-plugins/injection-guard",
+  "version": "0.1.0",
+  "description": "Source-aware prompt injection protection for DeepSeek Harness",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": { ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" } },
+  "scripts": { "build": "tsc", "test": "vitest run", "typecheck": "tsc --noEmit" },
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-agent": "*",
+    "@deepseek-ai/dsh-llm": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/schemastery": "*"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "latest",
+    "@deepseek-ai/dsh-agent": "latest",
+    "@deepseek-ai/dsh-llm": "latest",
+    "@deepseek-ai/dsh-tools": "latest",
+    "@deepseek-ai/schemastery": "latest",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}

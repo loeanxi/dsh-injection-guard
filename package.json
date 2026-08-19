@@ -5,8 +5,18 @@
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
-  "exports": { ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" } },
-  "scripts": { "build": "tsc", "test": "vitest run", "typecheck": "tsc --noEmit" },
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:integration": "vitest run integration",
+    "typecheck": "tsc --noEmit"
+  },
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "*",
@@ -17,6 +27,8 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "latest",
+    "@deepseek-ai/cordis-plugin-include": "^1.0.6",
+    "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
     "@deepseek-ai/dsh-agent": "latest",
     "@deepseek-ai/dsh-llm": "latest",
     "@deepseek-ai/dsh-tools": "latest",

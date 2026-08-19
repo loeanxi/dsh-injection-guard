@@ -1,7 +1,7 @@
 import type { RiskAssessment, SinkRisk, TurnRiskState } from '../types.js'
 
 const sensitiveKey = /(?:api[-_ ]?key|access[-_ ]?key|token|password|secret|private[-_ ]?key|authorization|cookie|credential)/i
-const sensitiveAssignment = /((?:api[-_ ]?key|access[-_ ]?key|token|password|secret|private[-_ ]?key|authorization|cookie|credential)\s*[:=]\s*)([^\s,;&]+)/gi
+const sensitiveAssignment = /((?:["']?(?:api[-_ ]?key|access[-_ ]?key|token|password|secret|private[-_ ]?key|authorization|cookie|credential)["']?)\s*[:=]\s*["']?)([^\s,;&"']+)/gi
 
 function redact(value: unknown, key = ''): unknown {
   if (sensitiveKey.test(key)) return '[REDACTED]'

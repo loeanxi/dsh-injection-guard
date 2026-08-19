@@ -1,5 +1,7 @@
 # dsh-injection-guard
 
+[English](#dsh-injection-guard) | [中文](#dsh-injection-guard-中文)
+
 Source-aware prompt injection protection for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
 
 Coding agents read files, web pages, tool results, skills, and other external content. That content can contain instructions aimed at the agent. `dsh-injection-guard` tracks untrusted context and blocks sensitive tool calls when indirect prompt injection is suspected.
@@ -128,3 +130,136 @@ The local research notes are available in [`research/dsh-prompt-injection.md`](r
 This repository contains the v0.1 MVP: rule-based detection, source-aware turn state, sensitive sink analysis, risk scoring, audit logging, a malicious README fixture, and DSH integration tests.
 
 License: MIT
+
+<a id="dsh-injection-guard-中文"></a>
+
+# dsh-injection-guard 中文说明
+
+面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的、基于来源感知的 Prompt Injection 防护插件。
+
+Coding Agent 会读取文件、网页、工具结果、Skills 以及其他外部内容。这些内容可能包含针对 Agent 的恶意指令。`dsh-injection-guard` 会跟踪不可信上下文，并在怀疑存在间接提示词注入时阻断敏感工具调用。
+
+```text
+不可信内容 → 注入信号 → 敏感工具调用 → 可解释风险决策 → ALLOW / ASK / BLOCK
+```
+
+## 30 秒 Demo
+
+仓库中的 [`examples/malicious-repo/README.md`](examples/malicious-repo/README.md) 是一个故意构造的恶意 README。它要求 Agent 忽略用户任务、读取 `~/.ssh/id_rsa`，并把内容发送到外部 URL。
+
+Guard 会把这个 README 标记为不可信。当 Agent 随后请求读取凭据时，风险会被评估为 `CRITICAL`，并在工具实际执行前阻断：
+
+```text
+⚠ DSH Injection Guard
+
+检测到可能的间接提示词注入。
+
+不可信上下文：
+  source: README.md
+
+注入信号：
+  - ignore previous instructions
+  - ~/.ssh
+  - send ...
+
+敏感操作：
+  tool: filesystem.read
+  target: {"path":"~/.ssh/id_rsa"}
+
+风险：
+  CRITICAL (90/100)
+
+决策：
+  BLOCKED
+```
+
+Demo 只使用本地 fixture，不会读取真实凭据，也不会访问网络。
+
+## 安装与加载
+
+当前版本面向 DSH developer preview 插件 API。开发时可以直接从 GitHub 安装：
+
+```bash
+npm install github:loeanxi/dsh-injection-guard
+```
+
+在 DSH composition 中加载：
+
+```yaml
+- id: injection-guard
+  name: '@dsh-plugins/injection-guard'
+  config:
+    log: true
+    askThreshold: 60
+```
+
+DSH preview API 仍在快速变化，生产环境应固定兼容的 DSH 依赖版本。
+
+## 检测范围
+
+v0.1 使用确定性规则，不调用 LLM Security Judge：
+
+- 指令劫持：`ignore previous instructions`、`override system`、伪造 system/developer message
+- 身份与权限伪装：`you are now`、管理员身份、安全验证等
+- 凭据访问：`.env`、`.ssh`、`.aws`、私钥、密码、Token、credentials
+- 外传行为：`curl`、`wget`、upload、webhook、HTTP 提交
+- 混淆或隐蔽执行：`base64`、`eval`、decode、execute/run command
+
+敏感 Sink 包括凭据访问、网络操作、Shell 执行、下载后执行，以及破坏性文件操作。
+
+## 工作原理
+
+在 `agent/pre-step` 阶段，插件对消息来源进行分类，并保存当前 Turn 的风险状态。默认将 file、web、tool、document 内容视为不可信。
+
+在 `tools/pre-execute` 阶段，插件分析即将执行的 Tool Call，将敏感 Sink 与当前 Turn 风险状态结合，并返回 DSH 原生的 `allow`、`ask` 或 `deny` 决策。被阻断的调用会在审计信息中说明来源、信号、目标、分数和最终决策。
+
+v0.1 的评分规则保持简单且可解释：
+
+| 信号 | 分值 |
+| --- | ---: |
+| 存在不可信上下文 | +20 |
+| 存在注入信号 | +30 |
+| 凭据访问 | +40 |
+| 网络操作 | +40 |
+| 下载后执行 | +50 |
+| Shell / 权限操作 | +40 |
+| 破坏性文件操作 | +30 |
+
+`0–29` 为 `LOW/ALLOW`，`30–59` 为 `MEDIUM/ALLOW + log`，`60–79` 为 `HIGH/ASK`，`80+` 为 `CRITICAL/BLOCK`。
+
+## 本地测试
+
+```bash
+npm install
+npm test
+npm run test:integration
+npm run typecheck
+npm run build
+```
+
+集成测试会验证真实 DSH Loader composition，以及从恶意 README 内容到凭据 Sink 被阻断的 DSH ToolRuntime 路径。所有 Sink 都是本地模拟工具。
+
+## 范围与限制
+
+这是一个 Turn-level、source-aware 的策略信号，不是：
+
+- 精确到字符级别的因果追踪或 Taint Tracking；
+- 通用权限系统；
+- Sandbox；
+- 普通危险命令黑名单；
+- 基于 LLM 的语义裁判；
+- 对恶意内容影响 Agent 的绝对保证。
+
+外围 DSH composition 仍应保留来源信息。敏感操作仍应配合独立的权限控制、参数校验、Sandbox 和用户审批。
+
+## 研究依据
+
+本项目参考了近期评测 [Security Assessment of DeepSeek Harness with A.I.G: Evaluating Resistance to Indirect Prompt Injection](https://arxiv.org/abs/2608.16393)。该评测在真实 DSH Runtime 上测试了多种内容渠道、载体格式和攻击变体，特别指出 fake completion、obfuscation、skills、hidden Unicode 以及文件载体表示是重要测试维度。
+
+本地调研记录见 [`research/dsh-prompt-injection.md`](research/dsh-prompt-injection.md)。
+
+## 当前状态
+
+本仓库包含 v0.1 MVP：基于规则的检测、来源感知的 Turn 状态、敏感 Sink 分析、风险评分、审计日志、恶意 README fixture，以及 DSH 集成测试。
+
+许可证：MIT

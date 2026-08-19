@@ -44,6 +44,6 @@ describe('audit log', () => {
   it('keeps untrusted metadata on one audit-log line', () => {
     const log = formatAuditLog('tool\nforged-entry', 'safe', { agentId: 'a', hasUntrustedContext: true, sources: [{ label: 'README\nforged: true', trust: 'UNTRUSTED' }], injectionSignals: [{ type: 'instruction-hijack', severity: 'high', evidence: 'ignore\nforged' }], contextRiskScore: 20 }, [{ type: 'network', evidence: 'https://' }], { score: 90, level: 'CRITICAL', decision: 'BLOCK', reasons: [] })
     expect(log).not.toContain('README\nforged')
-    expect(log).toContain('source: README forged: true')
+    expect(log).toContain('untrusted: README forged: true')
   })
 })

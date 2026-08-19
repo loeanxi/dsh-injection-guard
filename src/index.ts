@@ -10,8 +10,8 @@ import { classifySink } from './sinks/sink-classifier.js'
 import type { TurnRiskState } from './types.js'
 
 export const name = 'injection-guard'
-export interface Config { log?: boolean; askThreshold?: number }
-export const Config: z<Config> = z.object({ log: z.boolean().default(true), askThreshold: z.number().default(60) })
+export interface Config { log?: boolean; askThreshold?: number; failClosed?: boolean }
+export const Config: z<Config> = z.object({ log: z.boolean().default(true), askThreshold: z.number().default(60), failClosed: z.boolean().default(true) })
 
 type Message = { source?: unknown; role?: string; content?: unknown }
 function textOf(content: unknown): string {
@@ -56,6 +56,7 @@ export function apply(ctx: Context, config: Config): void {
   const states = new WeakMap<object, TurnRiskState>()
   const log = config.log !== false
   const askThreshold = config.askThreshold ?? 60
+  const failClosed = config.failClosed !== false
   ctx.on('agent/pre-step', (event: { agent: object; messages: readonly Message[]; turn?: number }, next): Promise<PreStepDecision> => {
     const incoming = stateFromMessages(event.agent, event.messages, event.turn)
     const previous = states.get(event.agent)
@@ -80,9 +81,18 @@ export function apply(ctx: Context, config: Config): void {
   ctx.on('tools/pre-execute', async (exec: ToolExecution, next): Promise<PreToolDecision> => {
     const agent = exec.agent as object | undefined
     const state = agent ? states.get(agent) : undefined
-    if (!state) return next()
     const sinks = classifySink(exec.name, exec.arguments)
-    if (!sinks.length || (!state.hasUntrustedContext && !state.injectionSignals.length)) return next()
+    if (!sinks.length) return next()
+    if (!state) {
+      if (!failClosed) return next()
+      const unknownState: TurnRiskState = { agentId: agentKey(agent), hasUntrustedContext: false, sources: [{ label: 'turn state unavailable', trust: 'UNKNOWN' }], injectionSignals: [], contextRiskScore: 0 }
+      const assessment = evaluateRisk(unknownState, sinks)
+      assessment.reasons.unshift('guard: turn state unavailable; fail-closed review required')
+      const audit = formatAuditLog(exec.name, exec.arguments, unknownState, sinks, assessment)
+      if (log) console.warn(audit)
+      return { kind: 'ask', reason: audit }
+    }
+    if (!state.hasUntrustedContext && !state.injectionSignals.length) return next()
     const assessment = evaluateRisk(state, sinks)
     if (assessment.decision === 'BLOCK') {
       const audit = formatAuditLog(exec.name, exec.arguments, state, sinks, assessment)

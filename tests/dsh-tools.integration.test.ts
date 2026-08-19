@@ -70,4 +70,13 @@ describe('malicious README to sensitive tool call', () => {
     const result = await ctx.waterfall('tools/pre-execute', { agent, name: 'filesystem.read', arguments: { path: '~/.ssh/id_rsa' } } as never, () => Promise.resolve({ kind: 'allow' }))
     expect(result).toMatchObject({ kind: 'deny' })
   })
+
+  it('asks before a sensitive sink when the Turn state is unavailable', async () => {
+    const ctx = new Context()
+    context = ctx
+    apply(ctx, { log: false })
+    const result = await ctx.waterfall('tools/pre-execute', { agent: {}, name: 'filesystem.read', arguments: { path: '~/.ssh/id_rsa' } } as never, () => Promise.resolve({ kind: 'allow' }))
+    expect(result).toMatchObject({ kind: 'ask' })
+    expect(String((result as { reason?: string }).reason)).toContain('turn state unavailable')
+  })
 })

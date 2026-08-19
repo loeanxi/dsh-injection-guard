@@ -78,7 +78,9 @@ Sensitive sinks include credential access, network operations, shell execution, 
 
 At `agent/pre-step`, the plugin classifies message sources and records the current turn's risk state. File, web, tool, and document content is treated as untrusted by default.
 
-At `tools/pre-execute`, it classifies the proposed tool call, combines the sink with the turn risk state, and returns a DSH-native `allow`, `ask`, or `deny` decision. Blocked calls include the source, signals, target, score, and decision in the audit message.
+At `tools/post-execute`, it also inspects the completed tool output and carries detected injection signals into the next step of the same turn. This covers DSH compositions where tool results are not repeated in the next `agent/pre-step.messages` snapshot. If source metadata is absent but an injection signal is present, the context is conservatively treated as untrusted.
+
+At `tools/pre-execute`, it classifies the proposed tool call, combines the sink with the turn risk state, and returns a DSH-native `allow`, `ask`, or `deny` decision. Blocked calls include the source, signals, target, score, and decision in the audit message. Credential-like arguments are redacted from audit output.
 
 The score is intentionally simple and explainable in v0.1:
 
@@ -177,20 +179,42 @@ Demo 只使用本地 fixture，不会读取真实凭据，也不会访问网络�
 
 ## 安装与加载
 
-当前版本面向 DSH developer preview 插件 API。开发时可以直接从 GitHub 安装：
+当前版本面向 DSH developer preview 插件 API，并已适配 DSH 可安装 Bundle。Bundle 由 `package.json` 中的 `dsh.bundle` 声明和 `cordis.patch.yml` 组成。
 
-```bash
-npm install github:loeanxi/dsh-injection-guard
+从本地 checkout 安装到隔离的 `web` profile：
+
+```powershell
+cd D:\mycode\deepseek\dsh-stock
+$env:DSH_HOME = 'D:\mycode\deepseek\dsh-stock-runtime'
+pnpm dsh plugin --profile web add D:\mycode\deepseekplugin\dsh-injection-guard
 ```
 
-在 DSH composition 中加载：
+也可以从 GitHub 安装（Git 安装需要先构建 `lib/`）：
 
-```yaml
+```bash
+pnpm dsh plugin --profile web add github:loeanxi/dsh-injection-guard
+```
+
+确认 Bundle 已进入 composition：
+
+```powershell
+$env:DSH_HOME = 'D:\mycode\deepseek\dsh-stock-runtime'
+pnpm dsh --profile web --dump-config |
+  Select-String 'injection-guard|dsh-plugins'
+```
+
+预期能看到：
+
+```text
+# == @dsh-plugins/injection-guard
 - id: injection-guard
   name: '@dsh-plugins/injection-guard'
-  config:
-    log: true
-    askThreshold: 60
+```
+
+这一步只证明 Bundle 已进入配置树；要证明拦截生效，还必须在同一个 DSH runtime 中发起带 `source: { kind: "file" }` 的回合，并让 Agent 产生敏感 Tool Call。完整的确定性验证可运行：
+
+```bash
+npm test
 ```
 
 DSH preview API 仍在快速变化，生产环境应固定兼容的 DSH 依赖版本。
@@ -211,7 +235,9 @@ v0.1 使用确定性规则，不调用 LLM Security Judge：
 
 在 `agent/pre-step` 阶段，插件对消息来源进行分类，并保存当前 Turn 的风险状态。默认将 file、web、tool、document 内容视为不可信。
 
-在 `tools/pre-execute` 阶段，插件分析即将执行的 Tool Call，将敏感 Sink 与当前 Turn 风险状态结合，并返回 DSH 原生的 `allow`、`ask` 或 `deny` 决策。被阻断的调用会在审计信息中说明来源、信号、目标、分数和最终决策。
+在 `tools/post-execute` 阶段，插件还会检查刚完成的 Tool 输出，并把检测到的注入信号带入同一 Turn 的下一步。这样即使 DSH 下一次 `agent/pre-step.messages` 没有回填 Tool Result，也不会丢失恶意 README 的风险状态。如果缺少 source 元数据但已经检测到注入信号，插件会保守地将上下文判为不可信。
+
+在 `tools/pre-execute` 阶段，插件分析即将执行的 Tool Call，将敏感 Sink 与当前 Turn 风险状态结合，并返回 DSH 原生的 `allow`、`ask` 或 `deny` 决策。被阻断的调用会在审计信息中说明来源、信号、目标、分数和最终决策；凭据类参数会在审计日志中脱敏。
 
 v0.1 的评分规则保持简单且可解释：
 

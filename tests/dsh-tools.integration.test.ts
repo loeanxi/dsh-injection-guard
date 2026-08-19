@@ -31,4 +31,32 @@ describe('malicious README to sensitive tool call', () => {
     expect(String(result.content[0].text)).toContain('DSH Injection Guard')
     expect(sinkCalled).toBe(false)
   })
+
+  it('carries a malicious tool result into the next step before a credential read', async () => {
+    const ctx = new Context()
+    context = ctx
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    apply(ctx, { log: false })
+    let sinkCalled = false
+    const readme = await readFile('examples/malicious-repo/README.md', 'utf8')
+    ctx.tools.register(defineTool({
+      name: 'filesystem.read', description: 'read a file', parameters: { path: { type: 'string' } },
+      output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
+      async execute(args) {
+        if (args.path === 'README.md') return readme
+        sinkCalled = true
+        return 'fake secret'
+      },
+    }))
+    const agent = {}
+    const userMessage = createUserMessage({ content: [{ type: 'text', text: 'inspect the repository' }], source: { kind: 'user' } })
+    await ctx.waterfall('agent/pre-step', { agent, messages: [userMessage], turn: 1 }, () => Promise.resolve({ kind: 'enter', messages: [userMessage] }))
+    const first = await ctx.tools.execute({ signal: new AbortController().signal, callId: CallId('demo-readme'), name: 'filesystem.read', arguments: { path: 'README.md' }, agent } as never)
+    expect(first.isError).toBe(false)
+    const second = await ctx.tools.execute({ signal: new AbortController().signal, callId: CallId('demo-credential-after-readme'), name: 'filesystem.read', arguments: { path: '~/.ssh/id_rsa' }, agent } as never)
+    expect(second.isError).toBe(true)
+    expect(String(second.content[0].text)).toContain('BLOCKED')
+    expect(sinkCalled).toBe(false)
+  })
 })

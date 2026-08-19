@@ -1,0 +1,6 @@
+- insert:
+    - id: injection-guard
+      name: '@dsh-plugins/injection-guard'
+      config:
+        log: true
+        askThreshold: 60

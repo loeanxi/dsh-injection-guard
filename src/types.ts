@@ -5,5 +5,5 @@ export type SinkType = 'credential-access' | 'network' | 'shell' | 'download-exe
 export interface SourceRisk { label: string; trust: SourceTrust }
 export interface InjectionSignal { type: SignalType; severity: SignalSeverity; evidence: string }
 export interface SinkRisk { type: SinkType; evidence: string }
-export interface TurnRiskState { agentId: string; hasUntrustedContext: boolean; sources: SourceRisk[]; injectionSignals: InjectionSignal[]; contextRiskScore: number }
+export interface TurnRiskState { agentId: string; turn?: number; hasUntrustedContext: boolean; sources: SourceRisk[]; injectionSignals: InjectionSignal[]; contextRiskScore: number }
 export interface RiskAssessment { score: number; level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'; decision: 'ALLOW' | 'ASK' | 'BLOCK'; reasons: string[] }

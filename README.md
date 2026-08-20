@@ -60,6 +60,7 @@ Load it in a DSH composition:
     askThreshold: 60
     failClosed: true
     semantic: true
+    locale: zh-CN
 ```
 
 The DSH preview API is still changing. Pin compatible DSH package versions in production deployments.
@@ -93,6 +94,8 @@ At `tools/pre-execute`, it classifies the proposed tool call, combines the sink 
 If a sensitive Tool Call arrives before the plugin has observed an `agent/pre-step`, the default `failClosed: true` setting returns `ask` instead of silently allowing the call. Set it to `false` only when another policy layer owns this fail-safe decision.
 
 Credential-like filesystem reads are always review-gated: with untrusted or injected context they are blocked, and even a trusted-context read returns `ask` for explicit approval. This prevents an absolute Windows path such as `C:\\Users\\name\\.ssh\\id_rsa` from being silently passed through.
+
+Audit messages support `locale: en` and `locale: zh-CN`. Chinese mode keeps the machine-readable `BLOCKED`, `ASKED`, and `ALLOWED` markers, for example `已阻断（BLOCKED）`.
 
 The score is intentionally simple and explainable in v0.1:
 
@@ -269,6 +272,8 @@ v0.1 使用确定性规则，不调用 LLM Security Judge：
 如果敏感 Tool Call 到达时插件还没有观察到 `agent/pre-step`，默认的 `failClosed: true` 会返回 `ask`，而不是静默放行。只有在其他策略层负责这个故障安全决策时，才应设置为 `false`。
 
 凭据类文件读取始终需要人工复核：如果关联了不可信或注入上下文则直接阻断；即使上下文可信，也会返回 `ask` 请求显式批准。这样可以避免类似 `C:\\Users\\name\\.ssh\\id_rsa` 的 Windows 绝对路径被静默放行。
+
+审计消息支持 `locale: en` 和 `locale: zh-CN`。中文模式仍保留机器可识别的 `BLOCKED`、`ASKED`、`ALLOWED` 标记，例如 `已阻断（BLOCKED）`。
 
 v0.1 的评分规则保持简单且可解释：
 

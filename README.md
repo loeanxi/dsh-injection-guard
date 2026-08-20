@@ -92,6 +92,8 @@ At `tools/pre-execute`, it classifies the proposed tool call, combines the sink 
 
 If a sensitive Tool Call arrives before the plugin has observed an `agent/pre-step`, the default `failClosed: true` setting returns `ask` instead of silently allowing the call. Set it to `false` only when another policy layer owns this fail-safe decision.
 
+Credential-like filesystem reads are always review-gated: with untrusted or injected context they are blocked, and even a trusted-context read returns `ask` for explicit approval. This prevents an absolute Windows path such as `C:\\Users\\name\\.ssh\\id_rsa` from being silently passed through.
+
 The score is intentionally simple and explainable in v0.1:
 
 | Signal | Points |
@@ -265,6 +267,8 @@ v0.1 使用确定性规则，不调用 LLM Security Judge：
 在 `tools/pre-execute` 阶段，插件分析即将执行的 Tool Call，将敏感 Sink 与当前 Turn 风险状态结合，并返回 DSH 原生的 `allow`、`ask` 或 `deny` 决策。被阻断的调用会在审计信息中说明来源、信号、目标、分数和最终决策；凭据类参数会在审计日志中脱敏。
 
 如果敏感 Tool Call 到达时插件还没有观察到 `agent/pre-step`，默认的 `failClosed: true` 会返回 `ask`，而不是静默放行。只有在其他策略层负责这个故障安全决策时，才应设置为 `false`。
+
+凭据类文件读取始终需要人工复核：如果关联了不可信或注入上下文则直接阻断；即使上下文可信，也会返回 `ask` 请求显式批准。这样可以避免类似 `C:\\Users\\name\\.ssh\\id_rsa` 的 Windows 绝对路径被静默放行。
 
 v0.1 的评分规则保持简单且可解释：
 

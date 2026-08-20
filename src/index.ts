@@ -148,7 +148,14 @@ export function apply(ctx: Context, config: Config): void {
       if (log) console.warn(audit)
       return { kind: 'ask', reason: audit }
     }
-    if (!state.hasUntrustedContext) return next()
+    if (!state.hasUntrustedContext) {
+      if (!sinks.some(sink => sink.type === 'credential-access')) return next()
+      const assessment = evaluateRisk(state, sinks, semantic ? scoreSemanticRisk({ text: state.contextText ?? '', sinks }) : undefined)
+      assessment.reasons.unshift('guard: credential access requires explicit review even without untrusted context')
+      const audit = formatAuditLog(exec.name, exec.arguments, state, sinks, assessment)
+      if (log) console.warn(audit)
+      return { kind: 'ask', reason: audit }
+    }
     const assessment = evaluateRisk(state, sinks, semantic ? scoreSemanticRisk({ text: state.contextText ?? '', sinks }) : undefined)
     if (assessment.decision === 'BLOCK') {
       const audit = formatAuditLog(exec.name, exec.arguments, state, sinks, assessment)

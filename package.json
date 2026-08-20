@@ -21,6 +21,7 @@
     "prepare": "npm run build",
     "test": "vitest run",
     "test:integration": "vitest run integration",
+    "test:robustness": "vitest run tests/robustness.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dsh": {
@@ -44,6 +45,7 @@
     "@deepseek-ai/dsh-llm": "latest",
     "@deepseek-ai/dsh-tools": "latest",
     "@deepseek-ai/schemastery": "latest",
+    "fast-check": "^4.9.0",
     "typescript": "^5.8.0",
     "vitest": "^3.2.0"
   }

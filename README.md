@@ -58,6 +58,8 @@ Load it in a DSH composition:
   config:
     log: true
     askThreshold: 60
+    failClosed: true
+    semantic: true
 ```
 
 The DSH preview API is still changing. Pin compatible DSH package versions in production deployments.
@@ -82,7 +84,13 @@ At `tools/post-execute`, it also inspects the completed tool output and carries 
 
 The parser accepts DSH text blocks, arrays, nested `content`/`data`/`parts` values, and string source kinds used by lightweight adapters. Repeated snapshots and repeated tool results are deduplicated so a long turn does not inflate its audit trail.
 
+Signals retain the source label and normalized match offsets for audit and downstream policy use. A signal in an explicitly trusted user/system message is not reclassified as untrusted; provenance must be unknown or explicitly untrusted before it can affect a sensitive sink.
+
+The optional `semantic` layer is enabled by default. It is a conservative local intent scorer: it can add up to 20 points and reasons, but it cannot reduce a deterministic score or turn `BLOCK` into `ALLOW`. A host can disable it with `semantic: false` while retaining the deterministic baseline.
+
 At `tools/pre-execute`, it classifies the proposed tool call, combines the sink with the turn risk state, and returns a DSH-native `allow`, `ask`, or `deny` decision. Blocked calls include the source, signals, target, score, and decision in the audit message. Credential-like arguments are redacted from audit output.
+
+If a sensitive Tool Call arrives before the plugin has observed an `agent/pre-step`, the default `failClosed: true` setting returns `ask` instead of silently allowing the call. Set it to `false` only when another policy layer owns this fail-safe decision.
 
 The score is intentionally simple and explainable in v0.1:
 
@@ -104,9 +112,18 @@ The score is intentionally simple and explainable in v0.1:
 npm install
 npm test
 npm run test:integration
+npm run test:robustness
 npm run typecheck
 npm run build
 ```
+
+The repository corpus evaluator also reports precision, recall, false-positive rate, false-negative rate, and interception rate:
+
+```bash
+npm test -- tests/corpus-evaluation.test.ts
+```
+
+The checked-in corpus is a small regression baseline, not a production benchmark; expand it with representative benign and adversarial DSH carriers before making release claims.
 
 The integration tests verify both the real DSH Loader composition and the real DSH ToolRuntime path from malicious README content to a blocked credential sink. All sinks are local simulated tools.
 
@@ -241,7 +258,13 @@ v0.1 使用确定性规则，不调用 LLM Security Judge：
 
 解析器支持 DSH 文本块、数组、嵌套的 `content`/`data`/`parts` 内容，以及轻量适配器使用的字符串 source kind。重复的消息快照和 Tool Result 会去重，避免长 Turn 造成审计记录膨胀。
 
+每个信号会保留来源标签和规范化文本中的匹配范围，供审计和后续策略使用。明确标记为 trusted 的 user/system 消息即使包含测试关键词，也不会被重新判定为不可信；只有来源未知或明确不可信时，信号才会影响敏感 Sink。
+
+可选的 `semantic` 层默认开启。它是保守的本地意图评分器，最多增加 20 分和解释原因，但不能降低确定性评分，也不能把 `BLOCK` 改成 `ALLOW`。设置 `semantic: false` 可以关闭它，同时保留确定性规则底线。
+
 在 `tools/pre-execute` 阶段，插件分析即将执行的 Tool Call，将敏感 Sink 与当前 Turn 风险状态结合，并返回 DSH 原生的 `allow`、`ask` 或 `deny` 决策。被阻断的调用会在审计信息中说明来源、信号、目标、分数和最终决策；凭据类参数会在审计日志中脱敏。
+
+如果敏感 Tool Call 到达时插件还没有观察到 `agent/pre-step`，默认的 `failClosed: true` 会返回 `ask`，而不是静默放行。只有在其他策略层负责这个故障安全决策时，才应设置为 `false`。
 
 v0.1 的评分规则保持简单且可解释：
 
@@ -263,9 +286,18 @@ v0.1 的评分规则保持简单且可解释：
 npm install
 npm test
 npm run test:integration
+npm run test:robustness
 npm run typecheck
 npm run build
 ```
+
+仓库还提供对照集评估，输出 precision、recall、误报率、漏报率和拦截率：
+
+```bash
+npm test -- tests/corpus-evaluation.test.ts
+```
+
+当前对照集只是小型回归基线，不是生产 benchmark；发布前应补充有代表性的正常样本和 adversarial DSH 载体。
 
 集成测试会验证真实 DSH Loader composition，以及从恶意 README 内容到凭据 Sink 被阻断的 DSH ToolRuntime 路径。所有 Sink 都是本地模拟工具。
 

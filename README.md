@@ -4,6 +4,8 @@
 
 Source-aware prompt injection protection for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
 
+**v0.1.0 status:** installable DSH bundle, turn-level source tracking, deterministic injection signals, sensitive-tool interception, explainable risk scoring, localized audit logs, and reproducible DSH integration fixtures.
+
 Coding agents read files, web pages, tool results, skills, and other external content. That content can contain instructions aimed at the agent. `dsh-injection-guard` tracks untrusted context and blocks sensitive tool calls when indirect prompt injection is suspected.
 
 ```text
@@ -60,9 +62,30 @@ Load it in a DSH composition:
     askThreshold: 60
     failClosed: true
     semantic: true
+    locale: zh-CN
 ```
 
 The DSH preview API is still changing. Pin compatible DSH package versions in production deployments.
+
+### Configuration
+
+All options are optional. The safe defaults are shown below:
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `log` | `true` | Emit an explainable audit message for each decision |
+| `askThreshold` | `60` | Minimum score for `ASK` when a block threshold is not reached |
+| `failClosed` | `true` | Review-gate sensitive calls when no turn state is available |
+| `semantic` | `true` | Add conservative local intent signals; never weakens deterministic rules |
+| `locale` | `en` | Use `en` or `zh-CN` for audit text while retaining machine markers |
+
+For Chinese audit output:
+
+```yaml
+config:
+  log: true
+  locale: zh-CN
+```
 
 ## What it detects
 
@@ -91,6 +114,10 @@ The optional `semantic` layer is enabled by default. It is a conservative local 
 At `tools/pre-execute`, it classifies the proposed tool call, combines the sink with the turn risk state, and returns a DSH-native `allow`, `ask`, or `deny` decision. Blocked calls include the source, signals, target, score, and decision in the audit message. Credential-like arguments are redacted from audit output.
 
 If a sensitive Tool Call arrives before the plugin has observed an `agent/pre-step`, the default `failClosed: true` setting returns `ask` instead of silently allowing the call. Set it to `false` only when another policy layer owns this fail-safe decision.
+
+Credential-like filesystem reads are always review-gated: with untrusted or injected context they are blocked, and even a trusted-context read returns `ask` for explicit approval. This prevents an absolute Windows path such as `C:\\Users\\name\\.ssh\\id_rsa` from being silently passed through.
+
+Audit messages support `locale: en` and `locale: zh-CN`. Chinese mode keeps the machine-readable `BLOCKED`, `ASKED`, and `ALLOWED` markers, for example `已阻断（BLOCKED）`.
 
 The score is intentionally simple and explainable in v0.1:
 
@@ -127,6 +154,8 @@ The checked-in corpus is a small regression baseline, not a production benchmark
 
 The integration tests verify both the real DSH Loader composition and the real DSH ToolRuntime path from malicious README content to a blocked credential sink. All sinks are local simulated tools.
 
+To reproduce the same flow manually, place the fixture in the active DSH workspace and ask the agent to read it. The expected security signal is an audit entry containing `BLOCKED` (Chinese mode also contains `已阻断`); the dangerous tool body must not run. Do not use a real private key or a real external endpoint.
+
 ## Scope and limitations
 
 This is a turn-level, source-aware policy signal. It is not:
@@ -157,6 +186,8 @@ License: MIT
 # dsh-injection-guard 中文说明
 
 面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的、基于来源感知的 Prompt Injection 防护插件。
+
+**v0.1.0 状态：** 已具备可安装的 DSH Bundle、Turn-level 来源跟踪、确定性注入信号检测、敏感 Tool Call 拦截、可解释风险评分、多语言审计日志，以及可复现的 DSH 集成测试夹具。
 
 Coding Agent 会读取文件、网页、工具结果、Skills 以及其他外部内容。这些内容可能包含针对 Agent 的恶意指令。`dsh-injection-guard` 会跟踪不可信上下文，并在怀疑存在间接提示词注入时阻断敏感工具调用。
 
@@ -238,6 +269,26 @@ npm test
 
 DSH preview API 仍在快速变化，生产环境应固定兼容的 DSH 依赖版本。
 
+### 配置项
+
+所有配置项均可省略，以下是安全默认值：
+
+| 配置项 | 默认值 | 作用 |
+| --- | --- | --- |
+| `log` | `true` | 为每次决策输出可解释审计信息 |
+| `askThreshold` | `60` | 未达到阻断阈值时触发 `ASK` 的最低分数 |
+| `failClosed` | `true` | 没有 Turn 状态时，对敏感调用进行人工复核 |
+| `semantic` | `true` | 增加保守的本地意图信号，不会削弱确定性规则 |
+| `locale` | `en` | 使用 `en` 或 `zh-CN` 输出审计文本，同时保留机器标记 |
+
+如果希望页面上看到中文审计结果：
+
+```yaml
+config:
+  log: true
+  locale: zh-CN
+```
+
 ## 检测范围
 
 v0.1 使用确定性规则，不调用 LLM Security Judge：
@@ -265,6 +316,10 @@ v0.1 使用确定性规则，不调用 LLM Security Judge：
 在 `tools/pre-execute` 阶段，插件分析即将执行的 Tool Call，将敏感 Sink 与当前 Turn 风险状态结合，并返回 DSH 原生的 `allow`、`ask` 或 `deny` 决策。被阻断的调用会在审计信息中说明来源、信号、目标、分数和最终决策；凭据类参数会在审计日志中脱敏。
 
 如果敏感 Tool Call 到达时插件还没有观察到 `agent/pre-step`，默认的 `failClosed: true` 会返回 `ask`，而不是静默放行。只有在其他策略层负责这个故障安全决策时，才应设置为 `false`。
+
+凭据类文件读取始终需要人工复核：如果关联了不可信或注入上下文则直接阻断；即使上下文可信，也会返回 `ask` 请求显式批准。这样可以避免类似 `C:\\Users\\name\\.ssh\\id_rsa` 的 Windows 绝对路径被静默放行。
+
+审计消息支持 `locale: en` 和 `locale: zh-CN`。中文模式仍保留机器可识别的 `BLOCKED`、`ASKED`、`ALLOWED` 标记，例如 `已阻断（BLOCKED）`。
 
 v0.1 的评分规则保持简单且可解释：
 
@@ -300,6 +355,8 @@ npm test -- tests/corpus-evaluation.test.ts
 当前对照集只是小型回归基线，不是生产 benchmark；发布前应补充有代表性的正常样本和 adversarial DSH 载体。
 
 集成测试会验证真实 DSH Loader composition，以及从恶意 README 内容到凭据 Sink 被阻断的 DSH ToolRuntime 路径。所有 Sink 都是本地模拟工具。
+
+页面手测时，请把 fixture 放进当前 DSH 工作区，再要求 Agent 读取它。预期审计信息同时包含 `已阻断` 和机器可识别的 `BLOCKED`，危险 Tool 的实际执行体不会运行。不要使用真实私钥，也不要访问真实外部地址。
 
 ## 范围与限制
 

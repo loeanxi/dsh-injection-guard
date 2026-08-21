@@ -1,5 +1,6 @@
 export type SourceTrust = 'TRUSTED' | 'SEMI_TRUSTED' | 'UNTRUSTED' | 'UNKNOWN'
 export type SignalSeverity = 'low' | 'medium' | 'high' | 'critical'
+export type GuardLocale = 'en' | 'zh-CN'
 export type SignalType = 'instruction-hijack' | 'identity-spoofing' | 'secret-access' | 'exfiltration' | 'obfuscated-execution'
 export type SinkType = 'credential-access' | 'network' | 'shell' | 'download-execute' | 'destructive-filesystem' | 'none'
 export interface SourceRisk { label: string; trust: SourceTrust }

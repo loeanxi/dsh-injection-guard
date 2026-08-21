@@ -1,5 +1,5 @@
 {
-  "name": "@dsh-plugins/injection-guard",
+  "name": "dsh-injection-guard",
   "version": "0.1.0",
   "description": "Source-aware prompt injection protection for DeepSeek Harness",
   "type": "module",

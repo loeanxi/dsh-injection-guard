@@ -46,19 +46,19 @@ The demo uses local fixtures only. It does not read real credentials or contact 
 
 ## Install and load
 
-The plugin targets the DSH developer-preview plugin API and is distributed as an installable DSH Bundle. Make sure DSH is installed and available in your terminal, then install it from GitHub:
+The plugin targets the DSH developer-preview plugin API and is distributed as an installable DSH Bundle on npm. Make sure DSH is installed and available in your terminal, then install it with:
 
 ```bash
-pnpm dsh plugin --profile web add github:loeanxi/dsh-injection-guard
+pnpm dsh plugin --profile web add dsh-injection-guard
 ```
 
-The repository is also tagged with `dsh-plugin`, so community DSH marketplaces can discover it automatically after their next index refresh.
+The package is available at [npmjs.com/package/dsh-injection-guard](https://www.npmjs.com/package/dsh-injection-guard). To install directly from source instead, use `github:loeanxi/dsh-injection-guard`.
 
 Load it in a DSH composition:
 
 ```yaml
 - id: injection-guard
-  name: '@dsh-plugins/injection-guard'
+  name: 'dsh-injection-guard'
   config:
     log: true
     askThreshold: 60
@@ -144,9 +144,9 @@ pnpm dsh --profile web --dump-config
 The output should contain an entry similar to:
 
 ```text
-# == @dsh-plugins/injection-guard
+# == dsh-injection-guard
 - id: injection-guard
-  name: '@dsh-plugins/injection-guard'
+  name: 'dsh-injection-guard'
 ```
 
 This confirms that the Bundle is loaded into the selected DSH composition. To verify enforcement, use a local, non-sensitive fixture containing an indirect injection and request a credential-like tool action. The audit log should contain `BLOCKED`; the sensitive tool body must not run.
@@ -228,13 +228,13 @@ Demo 只使用本地 fixture，不会读取真实凭据，也不会访问网络�
 
 ## 安装与加载
 
-当前版本面向 DSH developer preview 插件 API，并作为可安装的 DSH Bundle 发布。用户只需要确保 DSH 已安装并能在终端中运行，然后从 GitHub 安装插件：
+当前版本面向 DSH developer preview 插件 API，并作为可安装的 DSH Bundle 发布到 npm。用户只需要确保 DSH 已安装并能在终端中运行，然后执行：
 
 ```bash
-pnpm dsh plugin --profile web add github:loeanxi/dsh-injection-guard
+pnpm dsh plugin --profile web add dsh-injection-guard
 ```
 
-仓库已添加 `dsh-plugin` 标签，社区 DSH 插件市场会在下一次索引刷新后自动发现它。
+npm 包地址：[npmjs.com/package/dsh-injection-guard](https://www.npmjs.com/package/dsh-injection-guard)。如果需要从源码安装，也可以使用 `github:loeanxi/dsh-injection-guard`。
 
 确认 Bundle 已进入当前 composition：
 
@@ -242,14 +242,14 @@ pnpm dsh plugin --profile web add github:loeanxi/dsh-injection-guard
 pnpm dsh --profile web --dump-config
 ```
 
-在输出中搜索 `injection-guard` 或 `@dsh-plugins/injection-guard`。
+在输出中搜索 `injection-guard` 或 `dsh-injection-guard`。
 
 预期能看到：
 
 ```text
-# == @dsh-plugins/injection-guard
+# == dsh-injection-guard
 - id: injection-guard
-  name: '@dsh-plugins/injection-guard'
+  name: 'dsh-injection-guard'
 ```
 
 这一步只证明 Bundle 已进入配置树。要证明拦截生效，请在当前 DSH 工作区中使用一个不包含真实机密的测试 fixture，让 Agent 读取该文件后请求凭据类 Tool Call。审计日志应出现 `BLOCKED`，敏感 Tool 的实际执行体不应运行。DSH preview API 仍在快速变化，生产环境应固定兼容的 DSH 依赖版本。

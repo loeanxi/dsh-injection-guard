@@ -46,10 +46,10 @@ The demo uses local fixtures only. It does not read real credentials or contact 
 
 ## Install and load
 
-The plugin currently targets the developer-preview DSH plugin API. Install the package from this repository while developing:
+The plugin targets the DSH developer-preview plugin API and is distributed as an installable DSH Bundle. Make sure DSH is installed and available in your terminal, then install the published repository:
 
 ```bash
-npm install github:loeanxi/dsh-injection-guard
+pnpm dsh plugin --profile web add github:loeanxi/dsh-injection-guard
 ```
 
 Load it in a DSH composition:
@@ -79,7 +79,7 @@ All options are optional. The safe defaults are shown below:
 | `semantic` | `true` | Add conservative local intent signals; never weakens deterministic rules |
 | `locale` | `en` | Use `en` or `zh-CN` for audit text while retaining machine markers |
 
-For Chinese audit output:
+For Chinese audit output, add `locale: zh-CN` to the plugin configuration:
 
 ```yaml
 config:
@@ -133,28 +133,25 @@ The score is intentionally simple and explainable in v0.1:
 
 `0–29` is `LOW/ALLOW`, `30–59` is `MEDIUM/ALLOW + log`, `60–79` is `HIGH/ASK`, and `80+` is `CRITICAL/BLOCK`.
 
-## Test it locally
+## Verify the installation
 
 ```bash
-npm install
-npm test
-npm run test:integration
-npm run test:robustness
-npm run typecheck
-npm run build
+pnpm dsh --profile web --dump-config
 ```
 
-The repository corpus evaluator also reports precision, recall, false-positive rate, false-negative rate, and interception rate:
+The output should contain an entry similar to:
 
-```bash
-npm test -- tests/corpus-evaluation.test.ts
+```text
+# == @dsh-plugins/injection-guard
+- id: injection-guard
+  name: '@dsh-plugins/injection-guard'
 ```
 
-The checked-in corpus is a small regression baseline, not a production benchmark; expand it with representative benign and adversarial DSH carriers before making release claims.
+This confirms that the Bundle is loaded into the selected DSH composition. To verify enforcement, use a local, non-sensitive fixture containing an indirect injection and request a credential-like tool action. The audit log should contain `BLOCKED`; the sensitive tool body must not run.
 
-The integration tests verify both the real DSH Loader composition and the real DSH ToolRuntime path from malicious README content to a blocked credential sink. All sinks are local simulated tools.
+Developers working from source can run the repository test suite with `npm test`. The tests use simulated local tools and do not access real credentials or external endpoints.
 
-To reproduce the same flow manually, place the fixture in the active DSH workspace and ask the agent to read it. The expected security signal is an audit entry containing `BLOCKED` (Chinese mode also contains `已阻断`); the dangerous tool body must not run. Do not use a real private key or a real external endpoint.
+To reproduce the same flow manually, place a test fixture in the active DSH workspace and ask the agent to read it. The expected security signal is an audit entry containing `BLOCKED` (Chinese mode also contains `已阻断`); the dangerous tool body must not run. Do not use a real private key or a real external endpoint.
 
 ## Scope and limitations
 
@@ -229,29 +226,19 @@ Demo 只使用本地 fixture，不会读取真实凭据，也不会访问网络�
 
 ## 安装与加载
 
-当前版本面向 DSH developer preview 插件 API，并已适配 DSH 可安装 Bundle。Bundle 由 `package.json` 中的 `dsh.bundle` 声明和 `cordis.patch.yml` 组成。
-
-从本地 checkout 安装到隔离的 `web` profile：
-
-```powershell
-cd D:\mycode\deepseek\dsh-stock
-$env:DSH_HOME = 'D:\mycode\deepseek\dsh-stock-runtime'
-pnpm dsh plugin --profile web add D:\mycode\deepseekplugin\dsh-injection-guard
-```
-
-也可以从 GitHub 安装（Git 安装需要先构建 `lib/`）：
+当前版本面向 DSH developer preview 插件 API，并已适配 DSH 可安装 Bundle。用户只需要确保 DSH 已安装并能在终端中运行，然后执行：
 
 ```bash
 pnpm dsh plugin --profile web add github:loeanxi/dsh-injection-guard
 ```
 
-确认 Bundle 已进入 composition：
+确认 Bundle 已进入当前 composition：
 
-```powershell
-$env:DSH_HOME = 'D:\mycode\deepseek\dsh-stock-runtime'
-pnpm dsh --profile web --dump-config |
-  Select-String 'injection-guard|dsh-plugins'
+```bash
+pnpm dsh --profile web --dump-config
 ```
+
+在输出中搜索 `injection-guard` 或 `@dsh-plugins/injection-guard`。
 
 预期能看到：
 
@@ -261,13 +248,7 @@ pnpm dsh --profile web --dump-config |
   name: '@dsh-plugins/injection-guard'
 ```
 
-这一步只证明 Bundle 已进入配置树；要证明拦截生效，还必须在同一个 DSH runtime 中发起带 `source: { kind: "file" }` 的回合，并让 Agent 产生敏感 Tool Call。完整的确定性验证可运行：
-
-```bash
-npm test
-```
-
-DSH preview API 仍在快速变化，生产环境应固定兼容的 DSH 依赖版本。
+这一步只证明 Bundle 已进入配置树。要证明拦截生效，请在当前 DSH 工作区中使用一个不包含真实机密的测试 fixture，让 Agent 读取该文件后请求凭据类 Tool Call。审计日志应出现 `BLOCKED`，敏感 Tool 的实际执行体不应运行。DSH preview API 仍在快速变化，生产环境应固定兼容的 DSH 依赖版本。
 
 ### 配置项
 
@@ -335,7 +316,7 @@ v0.1 的评分规则保持简单且可解释：
 
 `0–29` 为 `LOW/ALLOW`，`30–59` 为 `MEDIUM/ALLOW + log`，`60–79` 为 `HIGH/ASK`，`80+` 为 `CRITICAL/BLOCK`。
 
-## 本地测试
+## 开发者测试
 
 ```bash
 npm install

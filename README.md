@@ -46,11 +46,13 @@ The demo uses local fixtures only. It does not read real credentials or contact 
 
 ## Install and load
 
-The plugin targets the DSH developer-preview plugin API and is distributed as an installable DSH Bundle. Make sure DSH is installed and available in your terminal, then install the published repository:
+The plugin targets the DSH developer-preview plugin API and is distributed as an installable DSH Bundle. Make sure DSH is installed and available in your terminal, then install it from GitHub:
 
 ```bash
 pnpm dsh plugin --profile web add github:loeanxi/dsh-injection-guard
 ```
+
+The repository is also tagged with `dsh-plugin`, so community DSH marketplaces can discover it automatically after their next index refresh.
 
 Load it in a DSH composition:
 
@@ -226,11 +228,13 @@ Demo 只使用本地 fixture，不会读取真实凭据，也不会访问网络�
 
 ## 安装与加载
 
-当前版本面向 DSH developer preview 插件 API，并已适配 DSH 可安装 Bundle。用户只需要确保 DSH 已安装并能在终端中运行，然后执行：
+当前版本面向 DSH developer preview 插件 API，并作为可安装的 DSH Bundle 发布。用户只需要确保 DSH 已安装并能在终端中运行，然后从 GitHub 安装插件：
 
 ```bash
 pnpm dsh plugin --profile web add github:loeanxi/dsh-injection-guard
 ```
+
+仓库已添加 `dsh-plugin` 标签，社区 DSH 插件市场会在下一次索引刷新后自动发现它。
 
 确认 Bundle 已进入当前 composition：
 
